@@ -85,14 +85,58 @@ void sendMsg(Message message);
 static uint8_t mydata[] = "Hi from WGLabz!";
 static osjob_t sendjob;
 
+//#define HELTEC
+#ifdef HELTEC
+// Pin mapping HELTEC ESP32
 
-// Pin mapping
+#define LoRa_nss 18
 const lmic_pinmap lmic_pins = {
-  .nss = 18, //
+  .nss = LoRa_nss, // CS
   .rxtx = LMIC_UNUSED_PIN,
-  .rst = 14, //
+  .rst = 14, // 
   .dio = {26, 33, 32}
 };
+#define LoRa_MOSI 27
+#define LoRa_MISO 19
+#define LoRa_SCK 5
+#else
+#define LoRa_MOSI 33
+#define LoRa_MISO 26
+#define LoRa_SCK 27
+#define LoRa_nss 32
+
+#define LoRa_dio1 14
+//#define LoRa_nrst 12
+#define LoRa_busy 13
+// Pin mapping CUSTOM BOARD
+const lmic_pinmap lmic_pins = {
+  .nss = LoRa_nss, // CS
+  .rxtx = LMIC_UNUSED_PIN,
+  .rst = 14, // 
+  .dio = {5, 12, 15}
+};
+#endif
+
+  // signals | ESP32 HELTEC | ESP32 CUSTOM
+  // BUSY   | 
+  // DIO3   | 
+  // DIO2   | 32    | LMIC_UNUSED_PIN
+  // DIO1   | 33    | LMIC_UNUSED_PIN
+  // DIO0   | 26    | LMIC_UNUSED_PIN
+  // RST    | 14    | LMIC_UNUSED_PIN
+  // NSS    | 18    | 32
+
+  // MISO   | 19    | 26
+  // MOSI   | 27    | 33
+  // SCK    | 5     | 27
+    
+    //SPI.begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss);
+
+    // static const uint8_t RST_LoRa = 14;
+    // static const uint8_t DIO0 = 26;
+    // static const uint8_t DIO1 = 33;
+    // static const uint8_t DIO2 = 32;
+
 /*
 Starting
 nss: 8
@@ -355,6 +399,14 @@ void do_send(osjob_t* j, Message message) {
     // Next TX is scheduled after TX_COMPLETE event.
 }
 
+    #define EN_LORA 4
+    #define EN_GPS 13
+    #define BUZZER 25
+
+void playBuzzer(int freq, int duration){
+    tone(BUZZER, freq, duration);
+}
+
 void setup() {
     delay(100);
     //setup the display
@@ -365,22 +417,65 @@ void setup() {
     Serial.begin(115200);
     Serial.println(F("Starting"));
 
+    //#define LoRa_nss 32
+    //#define LoRa_dio1 14
+    ////#define LoRa_nrst 12
+    //#define LoRa_busy 13
+
+    //SPI.begin(27, 26, 33, 32); //MISO: 19, MOSI: 27, SCK: 5
+
+//#define LoRa_MOSI 33
+//#define LoRa_MISO 26
+//#define LoRa_SCK 27
+//#define LoRa_nss 32
+ 
+
+#ifdef HELTEC
     //In/Out Pins
     pinMode(ledPin, OUTPUT);
     pinMode(buttonPin, INPUT_PULLUP);
     digitalWrite(buttonPin, HIGH);
+#else
+    SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
+
+    pinMode(EN_LORA, OUTPUT);
+    digitalWrite(EN_LORA, HIGH);
+    pinMode(EN_GPS, OUTPUT);
+    digitalWrite(EN_GPS, LOW);
+    pinMode(BUZZER, OUTPUT);
+
+    playBuzzer(1000, 1000);
+
+    
+    //pinMode(LoRa_MISO, INPUT); // impedance test
+    delay(100);
+#endif
+
+  Serial.print("MOSI: ");
+  Serial.println(MOSI);
+  Serial.print("MISO: ");
+  Serial.println(MISO);
+  Serial.print("SCK: ");
+  Serial.println(SCK);
+  Serial.print("SS: ");
+  Serial.println(SS); 
 
     // LMIC init &RESET
     // os_init_ex returns 0 if the LMIC was already initialized
 
-    os_init();
+    //os_init();
     //os_init_ex(&lmic_pins);
-    //if(os_init())
+    if(!os_init())
     ////if(os_init_ex(&lmic_pins)==0) //(os_init()==0)
-    //{
-    //    Serial.println("OS Init Failed");
-    //    return;
-    //}
+    {
+        while(1)
+        {
+            Serial.println("OS Init Failed");
+            delay(2000);
+            //Serial.print(".");
+        }
+        return;
+    }
     LMIC_reset();
 
 
