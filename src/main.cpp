@@ -7,11 +7,16 @@
 //# define CFG_eu868
 //# define LMIC_REGION_EU868
 //# define CFG_LMIC_REGION_MASK 0 //LMIC_REGION_EU868
+#include "Arduino.h"
+#include <stdint.h>
+
 #include <lmic.h>
 #include <hal/hal.h>
 #include <SPI.h>
 #include <U8x8lib.h>
 #include <cayenneLPP.h>
+
+#include "dr_lorawan.h"
 
 /*
 Configurate OAA mode: 
@@ -20,26 +25,12 @@ Configurate OAA mode:
 //Copy 2B7E151628AED2A6ABF7158809CF4F3C (APPKEY[16]) into chipstack device OTAA keys
 
 */
-#define MAX_QUEUE_SIZE 15
+
 #define TIMEOUT_MS 10000
 #define REQUEST_MS 20000
 
-int messagenumber = 0;
-
-int messageid = 0;
-typedef struct {
-    int messageId=0;
-    String message;
-    bool confirmed;
-    unsigned long timestamp;
-    bool ackReceived;
-} Message;
-
-Message messages[MAX_QUEUE_SIZE];
 //String messageQueue[MAX_QUEUE_SIZE];
-int head = 0;
-int tail = 0;
-bool pendingAck = false;
+
 unsigned long lastMessageTime = 0;
 
 const unsigned TX_INTERVAL = 10;
@@ -90,7 +81,6 @@ void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
 
 void do_send(osjob_t* j, Message message);
 void sendMsg(Message message);
-Message getCurrentMessage();
 
 static uint8_t mydata[] = "Hi from WGLabz!";
 static osjob_t sendjob;
@@ -98,13 +88,23 @@ static osjob_t sendjob;
 
 // Pin mapping
 const lmic_pinmap lmic_pins = {
-  .nss = 18,
+  .nss = 18, //
   .rxtx = LMIC_UNUSED_PIN,
-  .rst = 14,
+  .rst = 14, //
   .dio = {26, 33, 32}
 };
+/*
+Starting
+nss: 8
+rst: 12
+dio[0]: 26
+dio[1]: 33
+dio[2]: 32
+*/
 //OLED Declaration 
-U8X8_SSD1306_128X64_NONAME_SW_I2C u8x8(/* clock=*/ 15, /* data=*/ 4, /* reset=*/ 16);
+//U8X8_SSD1306_128X64_NONAME_SW_I2C u8x8(/* clock=*/ 15, /* data=*/ 4, /* reset=*/ 16);
+
+DRLORAWAN drlw_1;
 
 //LED and Button Pins
 int buttonPin = 13;
@@ -112,7 +112,9 @@ int ledPin=12;
 int boardLED=25;
 int lastState=0;
 
-bool pendingack=false;
+int currenttime=millis();
+int currenttime2=millis();
+bool retrying=false;
 
 void ledFLash(int flashes){
     int lastStateLED=digitalRead(ledPin);
@@ -124,7 +126,6 @@ void ledFLash(int flashes){
     }
     digitalWrite(ledPin,lastStateLED);
 }
-
 
 void onEvent (ev_t ev) {
     Serial.print(os_getTime());
@@ -163,7 +164,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
-            u8x8.drawString(0, 2, "Data Sent");
+            //u8x8.drawString(0, 2, "Data Sent");
             Serial.println(F("EV_TXCOMPLETE"));
 
             //Serial.print(F("LMIC.txrxFlags: "));
@@ -186,15 +187,15 @@ void onEvent (ev_t ev) {
 
             if (LMIC.txrxFlags & TXRX_ACK)
             {
-                Serial.println("[Received ack for message " + String(messageid) + "]");
-                pendingack=false;
+                Serial.println("[Received ack for message " + String(drlw_1.getCurrentMessageId()) + "]");
+                drlw_1.pendingack_drlora=false;
             }
             if (LMIC.dataLen) 
             {
               Serial.print(F("Received "));
               Serial.print(LMIC.dataLen);
               Serial.print(F(" bytes of payload: "));
-              u8x8.drawString(0, 3, "Data Received: ");
+              //u8x8.drawString(0, 3, "Data Received: ");
               
               
                Serial.print(F("0x"));
@@ -213,10 +214,10 @@ void onEvent (ev_t ev) {
            //do_send(&sendjob);
 
            //delay(2000);
-           u8x8.clearLine(1);
-           u8x8.clearLine(2);
-           u8x8.clearLine(3);
-           u8x8.clearLine(4);
+           //u8x8.clearLine(1);
+           //u8x8.clearLine(2);
+           //u8x8.clearLine(3);
+           //u8x8.clearLine(4);
 
             break;
    
@@ -234,7 +235,7 @@ void onEvent (ev_t ev) {
             Serial.print(F("Received "));
             Serial.print(LMIC.dataLen);
             Serial.println(F(" bytes of payload"));
-            u8x8.drawString(0, 3, "Data Received: ");
+            //u8x8.drawString(0, 3, "Data Received: ");
             Serial.print(F("0x"));
             for (int i = 0; i < LMIC.dataLen; i++) {
                 if (LMIC.frame[LMIC.dataBeg + i] < 0x10) {
@@ -255,70 +256,19 @@ void onEvent (ev_t ev) {
          default:
             Serial.print(F("Unknown event: 0x"));
             Serial.println(ev, HEX);
-            u8x8.drawString(0, 2, "Unknown event");
+            //u8x8.drawString(0, 2, "Unknown event");
             break;
     }
 }
 
-void enqueueMessage(Message message) {
-    if ((tail + 1) % MAX_QUEUE_SIZE != head) {
-        messages[tail] = message;
-        //messageid++;
-        //messages[tail].messageId = messageid;
-        tail = (tail + 1) % MAX_QUEUE_SIZE;
-    }
-    else
-    {
-        Serial.println("Queue is full. Cannot enqueue message");
-    }
-}
-
-void enqueueMessage(String message) {
-    Message messageStruct;
-    messageStruct.message = message;
-    enqueueMessage(messageStruct);
-}
-
-
-
-Message dequeueMessage() {
-    Message message = messages[head];
-    head = (head + 1) % MAX_QUEUE_SIZE;
-    return message;
-}
-
 void sendNextMessage() {
-    if (!pendingAck && head != tail) {
-        Message nextMessage = dequeueMessage();
-        pendingAck = nextMessage.confirmed;
+    if (!drlw_1.pendingack_drlora && drlw_1.messageQueueLength()>0) {
+        Message nextMessage = drlw_1.dequeueMessage();
+        drlw_1.pendingack_drlora = nextMessage.confirmed;
         //do_send(&sendjob, nextMessage, true);
         sendMsg(nextMessage);
         lastMessageTime = millis();
     }
-}
-
-Message getCurrentMessage() {
-    return messages[head];
-}
-
-void retryCurrentMessage() {
-    //if (millis() - lastMessageTime > TIMEOUT_MS) {
-        // Timeout reached, retry the current message
-        pendingAck = true;
-        //do_send(&sendjob, messageQueue[head], true);
-        sendMsg(messages[head]);
-        //lastMessageTime = millis();
-    //}
-}
-
-void clearCurrentMessage() {
-    // Remove the current message from the queue
-    head = (head + 1) % MAX_QUEUE_SIZE;
-    pendingAck = false;
-}
-
-int messageQueueLength() {
-    return (tail - head + MAX_QUEUE_SIZE) % MAX_QUEUE_SIZE;
 }
 
 void addKeyToIntJson(String& jsonString, const char* key, int value) {
@@ -337,7 +287,11 @@ void addKeyToIntJson(String& jsonString, const char* key, int value) {
 
 // Función para enviar datos a través de LMIC
 void sendData(Message message) {
-
+    if(message.retryCount==0)
+    {
+    //messageid++;
+    message.messageId=drlw_1.getTail();
+    }
     String& data=message.message;
   // Envía los datos con LMIC_setTxData2
   Serial.println();
@@ -350,15 +304,15 @@ void sendData(Message message) {
 
 void requestMsg()
 {   
-    if(messageQueueLength() != 0)
+    if(drlw_1.messageQueueLength() != 0)
     {
-        Serial.println("Pending messages ("+String(messageQueueLength())+"). Not requesting yet...");
+        Serial.println("Pending messages ("+String(drlw_1.messageQueueLength())+"). Not requesting yet...");
         return;
     }
 
-    if(pendingack){
+    if(drlw_1.pendingack_drlora){
         Serial.println(F("Pending ACK. Not requesting..."));
-        //u8x8.drawString(0, 4, "Pending ACK");
+        ////u8x8.drawString(0, 4, "Pending ACK");
         return;
     }
     //Serial.println(F("Requesting Data"));
@@ -375,35 +329,38 @@ void requestMsg()
 // send message request only when there is no pending message
 void sendMsg(Message message)
 {
-     pendingack=true;
+     drlw_1.pendingack_drlora=true;
      message.confirmed=true;
 
     do_send(&sendjob, message);
     //send again if not received notify and send again
 }
 
+void incrementCurrentRetryCount_0() {
+    drlw_1.incrementCurrentRetryCount();
+}
+
 void do_send(osjob_t* j, Message message) {
-    messageid++;
-    message.messageId=messageid;
 
     // Check if there is not a current TX/RX job running
-    u8x8.drawString(0, 4, "Sending Data");
+    //u8x8.drawString(0, 4, "Sending Data");
     if (LMIC.opmode & OP_TXRXPEND) {
         Serial.println(F("OP_TXRXPEND, not sending"));
-        u8x8.drawString(0, 1, "OP_TXRXPEND, not sending");
+        //u8x8.drawString(0, 1, "OP_TXRXPEND, not sending");
     } else {
         // Prepare upstream data transmission at the next possible time.
         sendData(message);
-        u8x8.drawString(0, 1, "Packet queued");
+        //u8x8.drawString(0, 1, "Packet queued");
     }
     // Next TX is scheduled after TX_COMPLETE event.
 }
 
 void setup() {
+    delay(100);
     //setup the display
-    u8x8.begin();
-    u8x8.setFont(u8x8_font_chroma48medium8_r);
-    u8x8.drawString(0, 0, "WGLabz LoRa Test");
+    //u8x8.begin();
+    //u8x8.setFont(u8x8_font_chroma48medium8_r);
+    //u8x8.drawString(0, 0, "WGLabz LoRa Test");
 
     Serial.begin(115200);
     Serial.println(F("Starting"));
@@ -414,7 +371,16 @@ void setup() {
     digitalWrite(buttonPin, HIGH);
 
     // LMIC init &RESET
+    // os_init_ex returns 0 if the LMIC was already initialized
+
     os_init();
+    //os_init_ex(&lmic_pins);
+    //if(os_init())
+    ////if(os_init_ex(&lmic_pins)==0) //(os_init()==0)
+    //{
+    //    Serial.println("OS Init Failed");
+    //    return;
+    //}
     LMIC_reset();
 
 
@@ -463,19 +429,14 @@ void setup() {
     sendMsg(msg);
 }
 
-int currenttime=millis();
-int currenttime2=millis();
-
-bool retrying=false;
-
 void loraloop() {
     
-    if(messageQueueLength()>0)
+    if(drlw_1.messageQueueLength()>0)
     {
-        if(pendingAck==false)
+        if(drlw_1.pendingack_drlora==false)
         {
             retrying=false;
-            Serial.println("Current queue length: "+String(messageQueueLength()));
+            Serial.println("Current queue length: "+String(drlw_1.messageQueueLength()));
             sendNextMessage();
             
         }
@@ -485,14 +446,23 @@ void loraloop() {
 
             if(millis()-lastMessageTime>2*TIMEOUT_MS)
             {
-                Serial.println("clearCurrentMessage: 2 x Timeout reached. Queue length: "+String(messageQueueLength())+"");
-                clearCurrentMessage();
+                Serial.println("clearCurrentMessage: 2 x Timeout reached. Queue length: "+String(drlw_1.messageQueueLength())+"");
+                drlw_1.clearCurrentMessage();
                 retrying=false;
             }
             else if(millis()-lastMessageTime>TIMEOUT_MS && !retrying)
             {
-                Serial.println("Resending message. Timeout reached. Queue length: "+String(messageQueueLength()));
-                retryCurrentMessage();
+                Serial.println("Resending message. Timeout reached. Queue length: "+String(drlw_1.messageQueueLength()));
+                //retryCurrentMessage();
+                    //if (millis() - lastMessageTime > TIMEOUT_MS) {
+                    // Timeout reached, retry the current message
+                    drlw_1.pendingack_drlora = true;
+                    //do_send(&sendjob, messageQueue[head], true);
+                    drlw_1.incrementCurrentRetryCount();
+                    sendMsg(drlw_1.getCurrentMessage());
+                    //lastMessageTime = millis();
+                //}
+
                 retrying=true;
             }
         }
@@ -514,7 +484,10 @@ void loop() {
         currenttime=millis();
         String jsonstring=String("{\"rand\":")+String(random(0,100))+", \"temp\":"+String(random(0,100))+", \"hum\":"+String(random(0,100))+", \"log\": \"Hello\", \"confirm\": \"true\"}";
         //sendMsg(jsonstring);
-        enqueueMessage(jsonstring);
+        //drlw_1.enqueueMessage_s(jsonstring);
+        Message messageStruct;
+        messageStruct.message = jsonstring;
+        //drlw_1.enqueueMessage(messageStruct);
     }
     loraloop();
 }
