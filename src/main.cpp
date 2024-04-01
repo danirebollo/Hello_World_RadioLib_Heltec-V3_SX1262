@@ -21,8 +21,56 @@
 #include <cayenneLPP.h>
 
 #include "dr_lorawan.h"
+#include "stc3100.h"
+#include <Wire.h>
 
+STC3100 stc3100_1;
 
+uint16_t getTEMPS_private(int force)
+{
+    int v_read = 0;
+    int status;
+    v_read = stc3100_1.stc3100_getTEMP(force); //readRegister_2b(I2CADDRESS_GASGAUGE_STC, 8); //stc3100_getVbat_o();
+    return v_read;
+}
+
+uint16_t getVBATS_private(int force)
+{
+    int v_read = 0;
+    int status;
+    v_read = stc3100_1.stc3100_getVbat(force); //readRegister_2b(I2CADDRESS_GASGAUGE_STC, 8); //stc3100_getVbat_o();
+    if (v_read > 6000 || v_read < 2000)
+    {
+        log_w("trying again to get vbat");
+        v_read = stc3100_1.stc3100_getVbat(1);
+    }
+    return v_read;
+}
+uint16_t getmaBATS_private(int force)
+{
+    int mA_read = 0;
+    mA_read = stc3100_1.stc3100_getmAbat(force);
+    return (uint16_t)mA_read;
+}
+uint16_t getChargeCountBATS_private(int nop)
+{
+    int value = 0;
+    bool force = false;
+    if (nop != 0)
+        force = true;
+
+    value = stc3100_1.stc3100_getChargeCount(force);
+    return (uint16_t)value;
+}
+uint16_t ResetGasGauge_private(int nop)
+{
+    stc3100_1.STC3100_resetGauge();
+}
+uint16_t GasGaugeInit_woScheduler_beforefifo(int a)
+{
+    stc3100_1.STC3100_Startup();
+    return 1;
+}
 //#define LORAMODULE_HELTEC
 
 /*
@@ -421,6 +469,21 @@ void playBuzzer(int freq, int duration){
     tone(BUZZER, freq, duration);
 }
 
+void readgasgauge()
+{
+        int batdata=stc3100_1.ReadBatteryData();
+    
+    int vbat=stc3100_1.stc3100_getVbat();
+    int mabat=stc3100_1.stc3100_getmAbat();
+    int chargecount=stc3100_1.stc3100_getChargeCount();
+    int temp=stc3100_1.stc3100_getTEMP();
+
+    Serial.println("Battery Data Readed: "+String(batdata));
+    Serial.println("Vbat: "+String(vbat));
+    Serial.println("mAbat: "+String(mabat));
+    Serial.println("ChargeCount: "+String(chargecount));
+    Serial.println("Temp: "+String(temp)); 
+}
 void setup() {
     delay(100);
     //setup the display
@@ -441,6 +504,17 @@ void setup() {
 //#define LoRa_MISO 26
 //#define LoRa_SCK 27
 //#define LoRa_nss 32
+
+    // START GAS GAUGE & I2C 
+    Serial.println(F("Starting Wire"));
+    Wire.begin();
+    Serial.println(F("Wire Started"));
+    stc3100_1.STC3100_Startup();
+    Serial.println(F("STC3100 Started"));
+    stc3100_1.STC3100_resetGauge();
+    // getting the battery data
+
+    readgasgauge();
 
 #ifdef LORAMODULE_HELTEC
     Serial.println(F("LORA MODULE= HELTEC"));
@@ -591,6 +665,8 @@ void loraloop() {
     }
 }
 
+unsigned long currenttime_3=millis();
+
 void loop() {
     os_runloop_once();
 
@@ -605,4 +681,10 @@ void loop() {
         //drlw_1.enqueueMessage(messageStruct);
     }
     loraloop();
+
+    // read gas gauge each 10 seconds
+    if(millis()-currenttime_3>10000){
+        currenttime_3=millis();
+        readgasgauge();
+    }
 }
