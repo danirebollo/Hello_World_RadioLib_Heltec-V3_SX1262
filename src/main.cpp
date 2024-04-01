@@ -1,3 +1,6 @@
+//Works on Heltec, not on custom
+
+
 /***
  * Original Code: https://github.com/matthijskooijman/arduino-lmic/blob/master/examples/ttn-abp/ttn-abp.ino
  * Modified By: Bikash Narayan Panda (weargeniuslabs@gmail.com) 
@@ -85,35 +88,43 @@ void sendMsg(Message message);
 static uint8_t mydata[] = "Hi from WGLabz!";
 static osjob_t sendjob;
 
-//#define HELTEC
+#define HELTEC
+
 #ifdef HELTEC
 // Pin mapping HELTEC ESP32
-
 #define LoRa_nss 18
-const lmic_pinmap lmic_pins = {
-  .nss = LoRa_nss, // CS
-  .rxtx = LMIC_UNUSED_PIN,
-  .rst = 14, // 
-  .dio = {26, 33, 32}
-};
+#define LoRa_rst 14
+#define LoRa_dio0 26
+#define LoRa_dio1 33
+#define LoRa_dio2 32
 #define LoRa_MOSI 27
 #define LoRa_MISO 19
 #define LoRa_SCK 5
+const lmic_pinmap lmic_pins = {
+  .nss = LoRa_nss, // CS
+  .rxtx = LMIC_UNUSED_PIN,
+  .rst = LoRa_rst, // 
+  .dio = {LoRa_dio0, LoRa_dio1, LoRa_dio2},
+  .spi_freq = F_CPU/15
+};
 #else
+#define LoRa_nss 32
+#define LoRa_rst 14
+#define LoRa_dio0 5 //UNCONNECTED, unused in ESP32
+#define LoRa_dio1 12 //UNCONNECTED, unused in ESP32
+#define LoRa_dio2 15 //UNCONNECTED, unused in ESP32
 #define LoRa_MOSI 33
 #define LoRa_MISO 26
 #define LoRa_SCK 27
-#define LoRa_nss 32
-
-#define LoRa_dio1 14
 //#define LoRa_nrst 12
-#define LoRa_busy 13
+//#define LoRa_busy 13
 // Pin mapping CUSTOM BOARD
 const lmic_pinmap lmic_pins = {
   .nss = LoRa_nss, // CS
   .rxtx = LMIC_UNUSED_PIN,
-  .rst = 14, // 
-  .dio = {5, 12, 15}
+  .rst = LoRa_rst, // 
+  .dio = {LoRa_dio0, LoRa_dio1, LoRa_dio2},
+  .spi_freq = F_CPU/15
 };
 #endif
 
@@ -422,13 +433,11 @@ void setup() {
     ////#define LoRa_nrst 12
     //#define LoRa_busy 13
 
-    //SPI.begin(27, 26, 33, 32); //MISO: 19, MOSI: 27, SCK: 5
-
+    SPI.begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
 //#define LoRa_MOSI 33
 //#define LoRa_MISO 26
 //#define LoRa_SCK 27
 //#define LoRa_nss 32
- 
 
 #ifdef HELTEC
     //In/Out Pins
@@ -436,7 +445,7 @@ void setup() {
     pinMode(buttonPin, INPUT_PULLUP);
     digitalWrite(buttonPin, HIGH);
 #else
-    SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
+    //SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
 
     pinMode(EN_LORA, OUTPUT);
     digitalWrite(EN_LORA, HIGH);
@@ -458,23 +467,19 @@ void setup() {
   Serial.print("SCK: ");
   Serial.println(SCK);
   Serial.print("SS: ");
-  Serial.println(SS); 
+  Serial.println(SS);  
 
     // LMIC init &RESET
     // os_init_ex returns 0 if the LMIC was already initialized
 
     //os_init();
     //os_init_ex(&lmic_pins);
-    if(!os_init())
+    while(os_init()==0)
     ////if(os_init_ex(&lmic_pins)==0) //(os_init()==0)
     {
-        while(1)
-        {
-            Serial.println("OS Init Failed");
-            delay(2000);
-            //Serial.print(".");
-        }
-        return;
+        Serial.println("OS Init Failed");
+        delay(1000);
+        //return;
     }
     LMIC_reset();
 
