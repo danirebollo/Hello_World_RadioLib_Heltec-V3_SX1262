@@ -1124,16 +1124,30 @@ int radio_init () {
         writeReg(RegTcxo, readReg(RegTcxo) | RegTcxo_TcxoInputOn);
 
     // seed 15-byte randomness via noise rssi
+    LMIC_DEBUG_PRINTF("rxlora(RXMODE_RSSI)\n");
     rxlora(RXMODE_RSSI);
-    while( (readReg(RegOpMode) & OPMODE_MASK) != OPMODE_RX ); // continuous rx
-    for(int i=1; i<16; i++) {
-        for(int j=0; j<8; j++) {
-            u1_t b; // wait for two non-identical subsequent least-significant bits
-            while( (b = readReg(LORARegRssiWideband) & 0x01) == (readReg(LORARegRssiWideband) & 0x01) );
-            randbuf[i] = (randbuf[i] << 1) | b;
-        }
-    }
+    LMIC_DEBUG_PRINTF("readReg(RegOpMode) & OPMODE_MASK) != OPMODE_RX\n");
+    // show readReg(RegOpMode) on debug
+    LMIC_DEBUG_PRINTF("readReg(RegOpMode) = %#02x\n", readReg(RegOpMode));
+
+    //removed some conflict parts. Check if it is necessary
+    
+    //while( (readReg(RegOpMode) & OPMODE_MASK) != OPMODE_RX ); // continuous rx
+
+    LMIC_DEBUG_PRINTF("a1\n");
+
+    // show readReg(LORARegRssiWideband) on debug
+    LMIC_DEBUG_PRINTF("readReg(LORARegRssiWideband) = %#02x\n", readReg(LORARegRssiWideband));
+
+    //for(int i=1; i<16; i++) {
+    //    for(int j=0; j<8; j++) {
+    //        u1_t b; // wait for two non-identical subsequent least-significant bits
+    //        while( (b = readReg(LORARegRssiWideband) & 0x01) == (readReg(LORARegRssiWideband) & 0x01) );
+    //        randbuf[i] = (randbuf[i] << 1) | b;
+    //    }
+    //}
     randbuf[0] = 16; // set initial index
+    LMIC_DEBUG_PRINTF("a2\n");
 
 #ifdef CFG_sx1276mb1_board
     // chain calibration

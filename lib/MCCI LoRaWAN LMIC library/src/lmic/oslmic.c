@@ -39,15 +39,20 @@ static struct {
 } OS;
 
 int os_init_ex (const void *pintable) {
+    LMIC_DEBUG_PRINTF("MEMSET\n");
     memset(&OS, 0x00, sizeof(OS));
+    LMIC_DEBUG_PRINTF("HAL_INIT\n");
     hal_init_ex(pintable);
+    LMIC_DEBUG_PRINTF("RADIO_INIT\n");
     if (! radio_init())
         return 0;
+    LMIC_DEBUG_PRINTF("LMIC_INIT\n");
     LMIC_init();
     return 1;
 }
 
 int os_init() {
+    LMIC_DEBUG_PRINTF("os_init_ex\n");
     if (os_init_ex((const void *)&lmic_pins))
         return 1;
     return 0;

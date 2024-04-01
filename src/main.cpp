@@ -1,4 +1,4 @@
-//Works on Heltec, not on custom
+//Works on Heltec, not on custom (almost)
 
 // set 	-D LORAMODULE_HELTEC in platformio.ini
 
@@ -465,15 +465,6 @@ void setup() {
     delay(100);
 #endif
 
-  Serial.print("MOSI: ");
-  Serial.println(MOSI);
-  Serial.print("MISO: ");
-  Serial.println(MISO);
-  Serial.print("SCK: ");
-  Serial.println(SCK);
-  Serial.print("SS: ");
-  Serial.println(SS);  
-
     // LMIC init &RESET
     // os_init_ex returns 0 if the LMIC was already initialized
 
@@ -483,9 +474,28 @@ void setup() {
     ////if(os_init_ex(&lmic_pins)==0) //(os_init()==0)
     {
         Serial.println("OS Init Failed");
+          Serial.print("MOSI: ");
+  Serial.println(MOSI);
+  Serial.print("MISO: ");
+  Serial.println(MISO);
+  Serial.print("SCK: ");
+  Serial.println(SCK);
+  Serial.print("SS: ");
+  Serial.println(SS);  
         delay(1000);
         //return;
     }
+
+Serial.println("OS Init OK");
+Serial.print("MOSI: ");
+  Serial.println(MOSI);
+  Serial.print("MISO: ");
+  Serial.println(MISO);
+  Serial.print("SCK: ");
+  Serial.println(SCK);
+  Serial.print("SS: ");
+  Serial.println(SS);  
+
     LMIC_reset();
 
 
