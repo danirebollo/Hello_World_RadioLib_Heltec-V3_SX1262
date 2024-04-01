@@ -21,6 +21,9 @@
 
 #include "dr_lorawan.h"
 
+
+#define HELTEC
+
 /*
 Configurate OAA mode: 
 # define NOTOTAA
@@ -88,7 +91,6 @@ void sendMsg(Message message);
 static uint8_t mydata[] = "Hi from WGLabz!";
 static osjob_t sendjob;
 
-#define HELTEC
 
 #ifdef HELTEC
 // Pin mapping HELTEC ESP32
