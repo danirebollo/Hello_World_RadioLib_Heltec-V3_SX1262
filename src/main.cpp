@@ -24,6 +24,10 @@
 #include "stc3100.h"
 #include <Wire.h>
 
+    #define EN_LORA 4
+    #define EN_GPS 13
+    #define BUZZER 25
+
 STC3100 stc3100_1;
 
 uint16_t getTEMPS_private(int force)
@@ -412,12 +416,13 @@ void requestMsg()
 {   
     if(drlw_1.messageQueueLength() != 0)
     {
-        Serial.println("Pending messages ("+String(drlw_1.messageQueueLength())+"). Not requesting yet...");
+        //Serial.println("Pending messages ("+String(drlw_1.messageQueueLength())+"). Not requesting yet...");
+        log_i("Pending messages. '%s' Not requesting yet...",String(drlw_1.messageQueueLength()));
         return;
     }
 
     if(drlw_1.pendingack_drlora){
-        Serial.println(F("Pending ACK. Not requesting..."));
+        log_i("Pending ACK. Not requesting...");
         ////u8x8.drawString(0, 4, "Pending ACK");
         return;
     }
@@ -461,9 +466,6 @@ void do_send(osjob_t* j, Message message) {
     // Next TX is scheduled after TX_COMPLETE event.
 }
 
-    #define EN_LORA 4
-    #define EN_GPS 13
-    #define BUZZER 25
 
 void playBuzzer(int freq, int duration){
     tone(BUZZER, freq, duration);
@@ -471,19 +473,59 @@ void playBuzzer(int freq, int duration){
 
 void readgasgauge()
 {
-        int batdata=stc3100_1.ReadBatteryData();
+    int batdata=stc3100_1.ReadBatteryData();
     
     int vbat=stc3100_1.stc3100_getVbat();
     int mabat=stc3100_1.stc3100_getmAbat();
     int chargecount=stc3100_1.stc3100_getChargeCount();
     int temp=stc3100_1.stc3100_getTEMP();
-
+    Serial.println("-----------------------------------------------");
     Serial.println("Battery Data Readed: "+String(batdata));
     Serial.println("Vbat: "+String(vbat));
     Serial.println("mAbat: "+String(mabat));
     Serial.println("ChargeCount: "+String(chargecount));
     Serial.println("Temp: "+String(temp)); 
 }
+
+/*
+RED    => "\033[31m",
+GREEN  => "\033[32m",
+YELLOW => "\033[33m",
+BLUE   => "\033[34m",
+PURPLE => "\033[35m",
+CYAN   => "\033[36m",
+WHITE  => "\033[37m",
+
+# background color
+BLACKB  => "\033[40m",
+REDB    => "\033[41m",
+GREENB  => "\033[42m",
+YELLOWB => "\033[43m",
+BLUEB   => "\033[44m",
+PURPLEB => "\033[45m",
+CYANB   => "\033[46m",
+WHITEB  => "\033[47m",
+
+# bold
+B    => "\033[1m",
+BOFF => "\033[22m",
+
+# italics
+I => "\033[3m",
+IOFF => "\033[23m",
+
+# underline
+U => "\033[4m",
+UOFF => "\033[24m",
+
+# invert
+R => "\033[7m",
+ROFF => "\033[27m",
+
+# reset
+RESET  => "\033[0m",
+*/
+
 void setup() {
     delay(100);
     //setup the display
@@ -492,7 +534,9 @@ void setup() {
     //u8x8.drawString(0, 0, "WGLabz LoRa Test");
 
     Serial.begin(115200);
-    Serial.println(F("Starting"));
+    //Serial.println(F("Starting"));
+    //printf("\033[1;31m[E] RED\033[0m;");
+    log_e("Starting");
 
     //#define LoRa_nss 32
     //#define LoRa_dio1 14
@@ -515,6 +559,12 @@ void setup() {
     // getting the battery data
 
     readgasgauge();
+    //while(1){
+    //    delay(5000);
+    //    //Serial.println("Waiting...");
+//
+    //    readgasgauge();
+    //}
 
 #ifdef LORAMODULE_HELTEC
     Serial.println(F("LORA MODULE= HELTEC"));
@@ -527,9 +577,13 @@ void setup() {
     //SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
 
     pinMode(EN_LORA, OUTPUT);
-    digitalWrite(EN_LORA, HIGH);
     pinMode(EN_GPS, OUTPUT);
+    digitalWrite(EN_LORA, LOW);
+    delay(200);
+
+    digitalWrite(EN_LORA, HIGH);
     digitalWrite(EN_GPS, LOW);
+    
     pinMode(BUZZER, OUTPUT);
 
     playBuzzer(1000, 1000);
@@ -560,15 +614,15 @@ void setup() {
         //return;
     }
 
-Serial.println("OS Init OK");
-Serial.print("MOSI: ");
-  Serial.println(MOSI);
-  Serial.print("MISO: ");
-  Serial.println(MISO);
-  Serial.print("SCK: ");
-  Serial.println(SCK);
-  Serial.print("SS: ");
-  Serial.println(SS);  
+    Serial.println("OS Init OK");
+    Serial.print("MOSI: ");
+    Serial.println(MOSI);
+    Serial.print("MISO: ");
+    Serial.println(MISO);
+    Serial.print("SCK: ");
+    Serial.println(SCK);
+    Serial.print("SS: ");
+    Serial.println(SS);  
 
     LMIC_reset();
 
@@ -616,10 +670,13 @@ Serial.print("MOSI: ");
     Message msg;
     msg.message=jsonstring;
     sendMsg(msg);
+
+    //Serial.println(F("LORA Initialized"));
+    log_i("LORA Initialized");
 }
 
-void loraloop() {
-    
+void loraloop() 
+{    
     if(drlw_1.messageQueueLength()>0)
     {
         if(drlw_1.pendingack_drlora==false)
@@ -667,11 +724,9 @@ void loraloop() {
 
 unsigned long currenttime_3=millis();
 
-void loop() {
-    os_runloop_once();
-
-    // send data every 10 seconds
-    if(millis()-currenttime>10000){
+void sendloramessage()
+{
+    // https://gist.github.com/kamito/704813
         currenttime=millis();
         String jsonstring=String("{\"rand\":")+String(random(0,100))+", \"temp\":"+String(random(0,100))+", \"hum\":"+String(random(0,100))+", \"log\": \"Hello\", \"confirm\": \"true\"}";
         //sendMsg(jsonstring);
@@ -679,6 +734,16 @@ void loop() {
         Message messageStruct;
         messageStruct.message = jsonstring;
         //drlw_1.enqueueMessage(messageStruct);
+}
+
+void loop() 
+{
+    //Run LORA loop
+    os_runloop_once();
+
+    // send LORA data every 10 seconds
+    if(millis()-currenttime>10000){
+        sendloramessage();
     }
     loraloop();
 
@@ -687,4 +752,28 @@ void loop() {
         currenttime_3=millis();
         readgasgauge();
     }
+
+    //read GPS
+
+    //read accelerometer
+
+    if (Serial.available() > 0) {
+    char keyPressed = Serial.read();
+    switch (keyPressed) {
+      case '1':
+        //Serial.println("Sending Lora Message");
+        log_i("Sending Lora Message");
+        sendloramessage();
+        break;
+      case '2':
+        //Serial.println("Reading Gas Gauge");
+        log_i("Reading Gas Gauge");
+        readgasgauge();
+        break;
+      default:
+        Serial.println("Tecla no válida");
+        log_i("Tecla no válida");
+        break;
+    }
+  }
 }
