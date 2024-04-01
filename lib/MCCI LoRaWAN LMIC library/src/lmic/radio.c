@@ -1108,15 +1108,17 @@ int radio_init () {
 
     // some sanity checks, e.g., read version number
     u1_t v = readReg(RegVersion);
-#ifdef CFG_sx1276_radio
-    if(v != 0x12 )
-        return 0;
-#elif CFG_sx1272_radio
-    if(v != 0x22)
-        return 0;
-#else
-#error Missing CFG_sx1272_radio/CFG_sx1276_radio
-#endif
+
+    LMIC_DEBUG_PRINTF("Radio version %#02x\n", v);
+//#ifdef CFG_sx1276_radio
+//    if(v != 0x12 )
+//        return 0;
+//#elif CFG_sx1272_radio
+//    if(v != 0x22)
+//        return 0;
+//#else
+//#error Missing CFG_sx1272_radio/CFG_sx1276_radio
+//#endif
     // set the tcxo input, if needed
     if (hal_queryUsingTcxo())
         writeReg(RegTcxo, readReg(RegTcxo) | RegTcxo_TcxoInputOn);

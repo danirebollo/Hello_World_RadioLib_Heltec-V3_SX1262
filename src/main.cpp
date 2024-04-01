@@ -1,5 +1,6 @@
 //Works on Heltec, not on custom
 
+// set 	-D LORAMODULE_HELTEC in platformio.ini
 
 /***
  * Original Code: https://github.com/matthijskooijman/arduino-lmic/blob/master/examples/ttn-abp/ttn-abp.ino
@@ -22,7 +23,7 @@
 #include "dr_lorawan.h"
 
 
-#define HELTEC
+//#define LORAMODULE_HELTEC
 
 /*
 Configurate OAA mode: 
@@ -92,7 +93,7 @@ static uint8_t mydata[] = "Hi from WGLabz!";
 static osjob_t sendjob;
 
 
-#ifdef HELTEC
+#ifdef LORAMODULE_HELTEC
 // Pin mapping HELTEC ESP32
 #define LoRa_nss 18
 #define LoRa_rst 14
@@ -435,18 +436,20 @@ void setup() {
     ////#define LoRa_nrst 12
     //#define LoRa_busy 13
 
-    SPI.begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
+    //SPI.begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
 //#define LoRa_MOSI 33
 //#define LoRa_MISO 26
 //#define LoRa_SCK 27
 //#define LoRa_nss 32
 
-#ifdef HELTEC
+#ifdef LORAMODULE_HELTEC
+    Serial.println(F("LORA MODULE= HELTEC"));
     //In/Out Pins
     pinMode(ledPin, OUTPUT);
     pinMode(buttonPin, INPUT_PULLUP);
     digitalWrite(buttonPin, HIGH);
 #else
+    Serial.println(F("LORA MODULE= CUSTOM"));
     //SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
 
     pinMode(EN_LORA, OUTPUT);

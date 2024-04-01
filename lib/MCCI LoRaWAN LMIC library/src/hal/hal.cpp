@@ -22,6 +22,8 @@
 // -----------------------------------------------------------------------------
 // I/O
 
+SPIClass *hspi;
+
 static const Arduino_LMIC::HalPinmap_t *plmic_pins;
 static Arduino_LMIC::HalConfiguration_t *pHalConfig;
 static Arduino_LMIC::HalConfiguration_t nullHalConig;
@@ -35,11 +37,13 @@ static void hal_io_init () {
     ASSERT(plmic_pins->dio[0] != LMIC_UNUSED_PIN);
     ASSERT(plmic_pins->dio[1] != LMIC_UNUSED_PIN || plmic_pins->dio[2] != LMIC_UNUSED_PIN);
 
-//    Serial.print("nss: "); Serial.println(plmic_pins->nss);
-//    Serial.print("rst: "); Serial.println(plmic_pins->rst);
-//    Serial.print("dio[0]: "); Serial.println(plmic_pins->dio[0]);
-//    Serial.print("dio[1]: "); Serial.println(plmic_pins->dio[1]);
-//    Serial.print("dio[2]: "); Serial.println(plmic_pins->dio[2]);
+    Serial.print("nss: "); Serial.println(plmic_pins->nss);
+    Serial.print("rst: "); Serial.println(plmic_pins->rst);
+    Serial.print("dio[0]: "); Serial.println(plmic_pins->dio[0]);
+    Serial.print("dio[1]: "); Serial.println(plmic_pins->dio[1]);
+    Serial.print("dio[2]: "); Serial.println(plmic_pins->dio[2]);
+    Serial.print("rxtx: "); Serial.println(plmic_pins->rxtx);
+
 
     // initialize SPI chip select to high (it's active low)
     digitalWrite(plmic_pins->nss, HIGH);
@@ -181,7 +185,41 @@ void hal_processPendingIRQs() {
 // SPI
 
 static void hal_spi_init () {
-    SPI.begin();
+    #ifdef LORAMODULE_HELTEC
+    // log to serial
+    Serial.println("hal_spi_init:: LORAMODULE_HELTEC");
+
+    hspi = &SPI;
+    #define LoRa_nss 18
+#define LoRa_rst 14
+#define LoRa_dio0 26
+#define LoRa_dio1 33
+#define LoRa_dio2 32
+#define LoRa_MOSI 27
+#define LoRa_MISO 19
+#define LoRa_SCK 5
+    hspi->begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss);
+    //hspi->begin();
+    #else
+    
+    Serial.println("hal_spi_init:: LORAMODULE_CUSTOM");
+    hspi = &SPI;
+    //hspi = new SPIClass(HSPI);
+    #define LoRa_nss 32
+    #define LoRa_rst 14
+    #define LoRa_dio0 5 //UNCONNECTED, unused in ESP32
+    #define LoRa_dio1 12 //UNCONNECTED, unused in ESP32
+    #define LoRa_dio2 15 //UNCONNECTED, unused in ESP32
+    #define LoRa_MOSI 33
+    #define LoRa_MISO 26
+    #define LoRa_SCK 27
+
+    hspi->begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss);
+
+#endif
+
+    
+    hspi->setFrequency(plmic_pins->spi_freq);
 }
 
 static void hal_spi_trx(u1_t cmd, u1_t* buf, size_t len, bit_t is_read) {
@@ -192,20 +230,20 @@ static void hal_spi_trx(u1_t cmd, u1_t* buf, size_t len, bit_t is_read) {
         spi_freq = LMIC_SPI_FREQ;
 
     SPISettings settings(spi_freq, MSBFIRST, SPI_MODE0);
-    SPI.beginTransaction(settings);
+    hspi->beginTransaction(settings);
     digitalWrite(nss, 0);
 
-    SPI.transfer(cmd);
+    hspi->transfer(cmd);
 
     for (; len > 0; --len, ++buf) {
         u1_t data = is_read ? 0x00 : *buf;
-        data = SPI.transfer(data);
+        data = hspi->transfer(data);
         if (is_read)
             *buf = data;
     }
 
     digitalWrite(nss, 1);
-    SPI.endTransaction();
+    hspi->endTransaction();
 }
 
 void hal_spi_write(u1_t cmd, const u1_t* buf, size_t len) {
