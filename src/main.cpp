@@ -76,7 +76,7 @@ uint16_t getChargeCountBATS_private(int nop)
 }
 uint16_t ResetGasGauge_private(int nop)
 {
-    stc3100_1.STC3100_resetGauge();
+    return stc3100_1.STC3100_resetGauge();
 }
 uint16_t GasGaugeInit_woScheduler_beforefifo(int a)
 {
@@ -420,6 +420,7 @@ void sendData(Message message) {
   LMIC_setTxData2(1, (uint8_t*)data.c_str(), data.length(), message.confirmed);
 }
 
+unsigned long timewithoutack=millis();
 void requestMsg()
 {   
     if(drlw_1.messageQueueLength() != 0)
@@ -432,6 +433,13 @@ void requestMsg()
     if(drlw_1.pendingack_drlora){
         log_i("Pending ACK. Not requesting...");
         ////u8x8.drawString(0, 4, "Pending ACK");
+        if(millis()-timewithoutack>TIMEOUT_MS)
+        {
+            //TODO 
+            log_e("Abandoning pending ACK.");
+            timewithoutack=millis();
+            drlw_1.pendingack_drlora=false;
+        }
         return;
     }
     //Serial.println(F("Requesting Data"));
@@ -449,8 +457,9 @@ void requestMsg()
 void sendMsg(Message message)
 {
      drlw_1.pendingack_drlora=true;
+     timewithoutack=millis();
      message.confirmed=true;
-
+    message.timestamp=millis();
     do_send(&sendjob, message);
     //send again if not received notify and send again
 }
@@ -557,18 +566,34 @@ void setup() {
     Serial.begin(115200);
     //Serial.println(F("Starting"));
     //printf("\033[1;31m[E] RED\033[0m;");
-    log_e("Starting");
 
-    //#define LoRa_nss 32
-    //#define LoRa_dio1 14
-    ////#define LoRa_nrst 12
-    //#define LoRa_busy 13
+    /* bypass between Serial Serial2 */
+    Serial2.begin(9600, SERIAL_8N1, 16, 17);
 
-    //SPI.begin(LoRa_SCK, LoRa_MISO, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
-//#define LoRa_MOSI 33
-//#define LoRa_MISO 26
-//#define LoRa_SCK 27
-//#define LoRa_nss 32
+    if(0)
+    {
+           //pinMode(EN_GPS, OUTPUT);
+    //gpson_time=millis();
+    //digitalWrite(EN_GPS, HIGH); 
+        //Serial.begin(9600);
+    while(0)
+    {
+        if(Serial2.available() > 0)
+    {
+        String data = "";
+        //log_i("GPS Data: ");
+        //Serial.println("\n-- GPS Data -- ");
+        while (Serial2.available() > 0)
+        {
+        // read the incoming byte:
+        int inChar = Serial2.read();
+        Serial.print((char)inChar);
+        }
+    }
+    }
+    }
+    log_i("Starting");
+
 
     // START GAS GAUGE & I2C 
     Serial.println(F("Starting Wire"));
@@ -577,8 +602,8 @@ void setup() {
     stc3100_1.STC3100_Startup();
     Serial.println(F("STC3100 Started"));
     stc3100_1.STC3100_resetGauge();
-    // getting the battery data
 
+    // getting the battery data
     readgasgauge();
 
 #ifdef LORAMODULE_HELTEC

@@ -451,7 +451,9 @@ static void configLoraModem () {
         case BW250: mc1 |= SX1276_MC1_BW_250; break;
         case BW500: mc1 |= SX1276_MC1_BW_500; break;
         default:
-            ASSERT(0);
+            //ASSERT(0);
+            LMIC_DEBUG_PRINTF("invalid bandwidth %d", bw);
+            return;
         }
         switch( getCr(LMIC.rps) ) {
         case CR_4_5: mc1 |= SX1276_MC1_CR_4_5; break;
@@ -459,7 +461,9 @@ static void configLoraModem () {
         case CR_4_7: mc1 |= SX1276_MC1_CR_4_7; break;
         case CR_4_8: mc1 |= SX1276_MC1_CR_4_8; break;
         default:
-            ASSERT(0);
+            //ASSERT(0);
+            LMIC_DEBUG_PRINTF("invalid coding rate %d", getCr(LMIC.rps));
+            return;
         }
 
         if (getIh(LMIC.rps)) {
@@ -794,12 +798,16 @@ static void txfsk () {
     opmode(OPMODE_TX);
 }
 
-static void txlora () {
+static int txlora () {
     // select LoRa modem (from sleep mode)
     //writeReg(RegOpMode, OPMODE_LORA);
     opmodeLora();
-    ASSERT((readReg(RegOpMode) & OPMODE_LORA) != 0);
-
+    //ASSERT((readReg(RegOpMode) & OPMODE_LORA) != 0);
+    if((readReg(RegOpMode) & OPMODE_LORA) != 0)
+    {
+        LMIC_DEBUG_PRINTF("txlora: OPMODE_LORA not set");
+        return -1;
+    }
     // enter standby mode (required for FIFO loading))
     opmode(OPMODE_STANDBY);
     // configure LoRa modem (cfg1, cfg2)
@@ -856,6 +864,7 @@ static void txlora () {
            getIh(LMIC.rps)
    );
 #endif
+return 1;
 }
 
 // start transmitter (buf=LMIC.frame, len=LMIC.dataLen)
@@ -917,10 +926,15 @@ static void rxlate (u4_t nLate) {
 }
 
 // start LoRa receiver (time=LMIC.rxtime, timeout=LMIC.rxsyms, result=LMIC.frame[LMIC.dataLen])
-static void rxlora (u1_t rxmode) {
+static int rxlora (u1_t rxmode) {
     // select LoRa modem (from sleep mode)
     opmodeLora();
-    ASSERT((readReg(RegOpMode) & OPMODE_LORA) != 0);
+    //ASSERT((readReg(RegOpMode) & OPMODE_LORA) != 0);
+    if((readReg(RegOpMode) & OPMODE_LORA) != 0)
+    {
+        LMIC_DEBUG_PRINTF("rxlora: OPMODE_LORA not set");
+        return -1;
+    }
     // enter standby mode (warm up))
     opmode(OPMODE_STANDBY);
     // don't use MAC settings at startup
@@ -1011,7 +1025,7 @@ static void rxlora (u1_t rxmode) {
 #endif
 }
 
-static void rxfsk (u1_t rxmode) {
+static int rxfsk (u1_t rxmode) {
     // only single or continuous rx (no noise sampling)
     if (rxmode == RXMODE_SCAN) {
         // indicate no bytes received.
@@ -1023,7 +1037,9 @@ static void rxfsk (u1_t rxmode) {
     // select FSK modem (from sleep mode)
     //writeReg(RegOpMode, 0x00); // (not LoRa)
     opmodeFSK();
-    ASSERT((readReg(RegOpMode) & OPMODE_LORA) == 0);
+    if((readReg(RegOpMode) & OPMODE_LORA) != 0)
+        return -1;
+    //ASSERT((readReg(RegOpMode) & OPMODE_LORA) == 0);
     // enter standby mode (warm up))
     opmode(OPMODE_STANDBY);
     // configure frequency
@@ -1059,10 +1075,13 @@ static void rxfsk (u1_t rxmode) {
         LMICOS_logEvent("+Rx FSK Continuous");
         opmode(OPMODE_RX);
     }
+    return 1;
 }
 
-static void startrx (u1_t rxmode) {
-    ASSERT( (readReg(RegOpMode) & OPMODE_MASK) == OPMODE_SLEEP );
+static int startrx (u1_t rxmode) {
+    if((readReg(RegOpMode) & OPMODE_MASK) == OPMODE_SLEEP)
+    return -1;
+    //ASSERT( (readReg(RegOpMode) & OPMODE_MASK) == OPMODE_SLEEP );
     if(getSf(LMIC.rps) == FSK) { // FSK modem
         rxfsk(rxmode);
     } else { // LoRa modem
@@ -1177,7 +1196,14 @@ int radio_init () {
 // (buf[0] holds index of next byte to be returned)
 u1_t radio_rand1 () {
     u1_t i = randbuf[0];
-    ASSERT( i != 0 );
+    //ASSERT( i != 0 );
+    if(i == 0 )
+    {
+        LMIC_DEBUG_PRINTF("radio_rand1:: i == 0");
+        return 0;
+    }
+        
+
     if( i==16 ) {
         os_aes(AES_ENC, randbuf, 16); // encrypt seed with any key
         i = 0;
