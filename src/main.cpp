@@ -11,6 +11,10 @@
 //# define CFG_eu868
 //# define LMIC_REGION_EU868
 //# define CFG_LMIC_REGION_MASK 0 //LMIC_REGION_EU868
+
+/* print all GPS data */
+//#define GPS_VERBOSE
+
 #include "Arduino.h"
 #include <stdint.h>
 
@@ -23,12 +27,16 @@
 #include "dr_lorawan.h"
 #include "stc3100.h"
 #include <Wire.h>
+#include <TinyGPS++.h>
 
     #define EN_LORA 4
     #define EN_GPS 13
     #define BUZZER 25
 
+TinyGPSPlus *gps=new TinyGPSPlus();
 STC3100 stc3100_1;
+bool gpsfirstboot=true;
+String gpsstring="";
 
 uint16_t getTEMPS_private(int force)
 {
@@ -467,6 +475,7 @@ void do_send(osjob_t* j, Message message) {
 }
 
 
+unsigned long gpson_time=0;
 void playBuzzer(int freq, int duration){
     tone(BUZZER, freq, duration);
 }
@@ -479,12 +488,7 @@ void readgasgauge()
     int mabat=stc3100_1.stc3100_getmAbat();
     int chargecount=stc3100_1.stc3100_getChargeCount();
     int temp=stc3100_1.stc3100_getTEMP();
-    Serial.println("-----------------------------------------------");
-    Serial.println("Battery Data Readed: "+String(batdata));
-    Serial.println("Vbat: "+String(vbat));
-    Serial.println("mAbat: "+String(mabat));
-    Serial.println("ChargeCount: "+String(chargecount));
-    Serial.println("Temp: "+String(temp)); 
+    log_d("Battery Data Readed: %d, Vbat: %d, mAbat: %d, ChargeCount: %d, Temp: %d",batdata,vbat,mabat,chargecount,temp);
 }
 
 /*
@@ -526,6 +530,23 @@ ROFF => "\033[27m",
 RESET  => "\033[0m",
 */
 
+void enableGPS()
+{
+    digitalWrite(EN_GPS, HIGH);
+    gpson_time=millis();
+    gpsfirstboot=true;
+}
+void disableGPS()
+{
+    digitalWrite(EN_GPS, LOW);
+    gpson_time=0;
+    gpsfirstboot=false;
+    // clear gps data and create again
+    delete gps;
+    gpsstring="";
+    gps=new TinyGPSPlus();
+}
+
 void setup() {
     delay(100);
     //setup the display
@@ -559,12 +580,6 @@ void setup() {
     // getting the battery data
 
     readgasgauge();
-    //while(1){
-    //    delay(5000);
-    //    //Serial.println("Waiting...");
-//
-    //    readgasgauge();
-    //}
 
 #ifdef LORAMODULE_HELTEC
     Serial.println(F("LORA MODULE= HELTEC"));
@@ -578,11 +593,15 @@ void setup() {
 
     pinMode(EN_LORA, OUTPUT);
     pinMode(EN_GPS, OUTPUT);
+    int RXPin = 2, TXPin = 1; // pins for ATGM336H GPS device
+    uint32_t GPSBaud = 9600; // default baudrate of ATGM336H GPS device
+    Serial2.begin(GPSBaud, SERIAL_8N1, 16, 17);
     digitalWrite(EN_LORA, LOW);
+    disableGPS();
     delay(200);
 
     digitalWrite(EN_LORA, HIGH);
-    digitalWrite(EN_GPS, LOW);
+    enableGPS();
     
     pinMode(BUZZER, OUTPUT);
 
@@ -675,6 +694,55 @@ void setup() {
     log_i("LORA Initialized");
 }
 
+void gpsloop()
+{
+    if(Serial2.available() > 0)
+    {
+        String data = "";
+        while (Serial2.available() > 0)
+        {
+        // read the incoming byte:
+        char inChar = Serial2.read();
+            if (gps->encode(inChar) && gps->location.isValid() && gps->date.isValid() && gps->time.isValid())
+            {
+                #define MAX_GPS_STRING_SIZE 256
+
+                // Crear un buffer temporal para formatear la cadena
+                char tempBuffer[MAX_GPS_STRING_SIZE];
+
+                // Utilizar snprintf para formatear la cadena
+                snprintf(tempBuffer, MAX_GPS_STRING_SIZE, "## -- GPS data: %d/%d/%d, %d:%d:%d, lat: %f, long: %f, nsat: %d, altitude: %3.2f, speed: %3.2f, course: %3.2f, hdop: %3.2f, timesinceon: %ds",
+                gps->date.month(), gps->date.day(), gps->date.year(), gps->time.hour(), gps->time.minute(), gps->time.second(), gps->location.lat(), gps->location.lng(), gps->satellites.value(), gps->altitude.meters(), gps->speed.kmph(), gps->course.deg(), gps->hdop.hdop(), (millis()-gpson_time)/1000);
+                // Asignar el contenido del buffer temporal a la variable gpsstring
+                String gpsstring_new(tempBuffer);
+
+                if(gpsfirstboot && gps->hdop.hdop()<5 && gps->hdop.hdop()>0 && gps->satellites.value()>2)
+                {
+                    gpsfirstboot=false;
+                    // show time from gpson_time to now
+                    //Serial.println("GPS First Boot");
+                    unsigned long gpson_time_1=(millis()-gpson_time)/1000;
+                    log_i("--- --- GPS First Boot time: %d seconds (hdop:%3.2f)",(gpson_time_1),gps->hdop.hdop());
+                }
+
+                if(gpsstring_new!=gpsstring)
+                {
+                    gpsstring=gpsstring_new;
+                    //Serial.println(gpsstring);
+                    #ifdef GPS_VERBOSE
+                    log_i("GPS Data: %s",gpsstring.c_str());
+                    #endif
+                }
+            }
+        }
+    }
+}
+
+void printGPSData()
+{
+    log_d("GPS Data: %s",gpsstring.c_str());
+}
+
 void loraloop() 
 {    
     if(drlw_1.messageQueueLength()>0)
@@ -723,6 +791,8 @@ void loraloop()
 }
 
 unsigned long currenttime_3=millis();
+unsigned long currenttime_4=millis();
+unsigned long currenttime_5=millis();
 
 void sendloramessage()
 {
@@ -750,7 +820,17 @@ void loop()
     // read gas gauge each 10 seconds
     if(millis()-currenttime_3>10000){
         currenttime_3=millis();
-        readgasgauge();
+    //    readgasgauge();
+    }
+    gpsloop();
+
+// Print each 10s: lat, long, nsat, hdop, vbat, mabat, chargecount, temp, millis()-gpson_time, pending ack
+    if(millis()-currenttime_5>10000){
+        currenttime_5=millis();
+        stc3100_1.ReadBatteryData();
+        log_d("\n\tPending ACK: %d, Pending lora messages: %d, Vbat: %d, mAbat: %d, ChargeCount: %d, Temp: %d, \n\tTime since GPS on: %d, lat: %f, long: %f, nsat: %d, hdop: %2.2f",
+        drlw_1.pendingack_drlora,drlw_1.messageQueueLength(),stc3100_1.stc3100_getVbat(),stc3100_1.stc3100_getmAbat(),stc3100_1.stc3100_getChargeCount(),
+        stc3100_1.stc3100_getTEMP(),(millis()-gpson_time)/1000,gps->location.lat(),gps->location.lng(),gps->satellites.value(),gps->hdop.hdop());
     }
 
     //read GPS
@@ -770,6 +850,27 @@ void loop()
         log_i("Reading Gas Gauge");
         readgasgauge();
         break;
+    case '3':
+        //Serial.println("Reading GPS");
+        log_i("Reading GPS");
+        gpsloop();
+        break;
+    case '4':
+        // enable GPS
+        log_i("Enabling GPS");
+        enableGPS();
+        break;
+    case '5':
+        // disable GPS
+        log_i("Disabling GPS");
+        disableGPS();
+        break;
+    case '6':
+        // print GPS data
+        log_i("Printing GPS Data");
+        printGPSData();
+        break;
+
       default:
         Serial.println("Tecla no válida");
         log_i("Tecla no válida");
