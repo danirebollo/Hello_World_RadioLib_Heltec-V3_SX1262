@@ -350,7 +350,8 @@ bool STC3100::ggtimedmeasure(bool force)
 	if ((millis() > ggtimer + 10000) || force)
 	{
 		delay(100);
-		log_d("getting real (forced) battery measures");
+		log_v("getting real (forced) battery measures");
+
 		ReadBatteryData();
 		//log_d("ggtimedmeasure 0");
 		if (s16_BattVoltage == 0)
