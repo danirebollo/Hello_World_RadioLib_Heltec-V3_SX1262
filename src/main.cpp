@@ -1,11 +1,20 @@
-// Works on Heltec, not on custom (almost)
+// Works on Heltec, and custom
 
 // set 	-D LORAMODULE_HELTEC in platformio.ini
 
-/***
- * Original Code: https://github.com/matthijskooijman/arduino-lmic/blob/master/examples/ttn-abp/ttn-abp.ino
- * Modified By: Bikash Narayan Panda (weargeniuslabs@gmail.com)
- * ***/
+// TODO
+// add WHOIS to Gas gauge and disable if not found after 2 attempts
+// same with IMU
+// replace IMU lib with STM32duino LSM6DSO
+// enable pedometer
+// downclock to 80mhz
+// disable wifi & BLE & other non used peripherals
+// disable GPS after GPS was given 
+
+//disable ESP32 and SIM800 on debug board.
+// Fix other boards GPS antenna section
+// Test LoRa antennas (chip, Helical, IPEX)
+
 
 // # define LMIC_DR_LEGACY
 // # define CFG_eu868
@@ -28,16 +37,33 @@
 #include "stc3100.h"
 #include <Wire.h>
 #include <TinyGPS++.h>
+#include <LSM6.h>
+
+#include <WiFi.h>
+#include <BluetoothSerial.h>
+#include <esp_wifi.h>
+#include "driver/adc.h"
 
 #define EN_LORA 4
 #define EN_GPS 13
 #define BUZZER 25
 
+#define IMU_INT1 18
+#define IMU_INT2 23
+#define IMU_CS 19
+
 TinyGPSPlus *gps = new TinyGPSPlus();
 STC3100 stc3100_1;
 bool gpsfirstboot = true;
 String gpsstring = "";
+LSM6 imu;
 
+bool LoRa_status = false;
+bool GPS_status = false;
+bool IMU_status = false;
+void esp32hibernation();
+void enableIMU();
+void disableIMU();
 uint16_t getTEMPS_private(int force)
 {
     int v_read = 0;
@@ -553,108 +579,58 @@ ROFF => "\033[27m",
 RESET  => "\033[0m",
 */
 
+
 void enableGPS()
 {
-    digitalWrite(EN_GPS, HIGH);
-    gpson_time = millis();
-    gpsfirstboot = true;
-}
-void disableGPS()
-{
-    digitalWrite(EN_GPS, LOW);
-    gpson_time = 0;
-    gpsfirstboot = false;
-    // clear gps data and create again
-    delete gps;
-    gpsstring = "";
+    //digitalWrite(EN_GPS, HIGH);
+    //delay(100);
     gps = new TinyGPSPlus();
-}
-
-void setup()
-{
-    delay(100);
-    // setup the display
-    // u8x8.begin();
-    // u8x8.setFont(u8x8_font_chroma48medium8_r);
-    // u8x8.drawString(0, 0, "WGLabz LoRa Test");
-
-    Serial.begin(115200);
-    // Serial.println(F("Starting"));
-    // printf("\033[1;31m[E] RED\033[0m;");
-
-    /* bypass between Serial Serial2 */
-    Serial2.begin(9600, SERIAL_8N1, 16, 17);
-
-    if (0)
-    {
-        // pinMode(EN_GPS, OUTPUT);
-        // gpson_time=millis();
-        // digitalWrite(EN_GPS, HIGH);
-        // Serial.begin(9600);
-        while (0)
-        {
-            if (Serial2.available() > 0)
-            {
-                String data = "";
-                // log_i("GPS Data: ");
-                // Serial.println("\n-- GPS Data -- ");
-                while (Serial2.available() > 0)
-                {
-                    // read the incoming byte:
-                    int inChar = Serial2.read();
-                    Serial.print((char)inChar);
-                }
-            }
-        }
-    }
-    log_i("Starting");
-
-    // START GAS GAUGE & I2C
-    Serial.println(F("Starting Wire"));
-    Wire.begin();
-    Serial.println(F("Wire Started"));
-    stc3100_1.STC3100_Startup();
-    Serial.println(F("STC3100 Started"));
-    stc3100_1.STC3100_resetGauge();
-
-    // getting the battery data
-    readgasgauge();
-
-#ifdef LORAMODULE_HELTEC
-    Serial.println(F("LORA MODULE= HELTEC"));
-    // In/Out Pins
-    pinMode(ledPin, OUTPUT);
-    pinMode(buttonPin, INPUT_PULLUP);
-    digitalWrite(buttonPin, HIGH);
-#else
-    Serial.println(F("LORA MODULE= CUSTOM"));
-    // SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
-
-    pinMode(EN_LORA, OUTPUT);
-    pinMode(EN_GPS, OUTPUT);
+    //Enable serial port
     int RXPin = 2, TXPin = 1; // pins for ATGM336H GPS device
     uint32_t GPSBaud = 9600;  // default baudrate of ATGM336H GPS device
     Serial2.begin(GPSBaud, SERIAL_8N1, 16, 17);
-    digitalWrite(EN_LORA, LOW);
-    disableGPS();
-    delay(200);
+    gpson_time = millis();
+    gpsfirstboot = true;
+    GPS_status = true;
+}
+void disableGPS()
+{
+    if(GPS_status)
+    {
+    Serial2.end();
+    //put serial pins in input (high impedance) mode
+    pinMode(16, INPUT);
+    pinMode(17, INPUT);
 
-    digitalWrite(EN_LORA, HIGH);
-    enableGPS();
+    //digitalWrite(EN_GPS, LOW);
+    gpson_time = 0;
+    gpsfirstboot = false;
+    // clear gps data and create again
+    if(gps == NULL || gps==nullptr )
+    {
+        log_w("Trying to delete GPS object that is null");
+    }
+    else
+    {
+        log_d("Deleting GPS object");
+        delete gps;
+    }
+        
+    gpsstring = "";
+    GPS_status = false;
+    }
+    else
+    {
+        log_w("GPS already disabled");
+    }
+}
 
-    pinMode(BUZZER, OUTPUT);
-
-    playBuzzer(1000, 1000);
-
-    // pinMode(LoRa_MISO, INPUT); // impedance test
+#define LORA_EN_STATUS true
+void enableLoRa()
+{
+    digitalWrite(EN_LORA, LORA_EN_STATUS);
     delay(100);
-#endif
-
-    // LMIC init &RESET
-    // os_init_ex returns 0 if the LMIC was already initialized
-
-    // os_init();
-    // os_init_ex(&lmic_pins);
+    //SPI enable
     while (os_init() == 0)
     ////if(os_init_ex(&lmic_pins)==0) //(os_init()==0)
     {
@@ -682,7 +658,9 @@ void setup()
     Serial.println(SS);
 
     LMIC_reset();
+    LoRa_status = true;
 
+    
 #ifdef NOTOTAA
 // Set static session parameters. Instead of dynamically establishing a session
 // by joining the network, precomputed session parameters are be provided.
@@ -729,6 +707,294 @@ void setup()
 
     // Serial.println(F("LORA Initialized"));
     log_i("LORA Initialized");
+}
+void disableLoRa()
+{
+    //LMIC_reset();
+    //LMIC_shutdown();
+    spi_stop();
+
+    //setting SPI lora pins to input mode
+    pinMode(LoRa_MOSI, INPUT);
+    pinMode(LoRa_MISO, INPUT);
+    pinMode(LoRa_SCK, INPUT);
+    pinMode(LoRa_nss, INPUT);
+    pinMode(LoRa_rst, INPUT);
+    pinMode(LoRa_dio0, INPUT);
+    pinMode(LoRa_dio1, INPUT);
+    pinMode(LoRa_dio2, INPUT);
+
+    digitalWrite(EN_LORA, !LORA_EN_STATUS);
+    //digitalWrite(LoRa_nss, LOW);
+    // LMIC_reset();
+    // LMIC_close();
+    LoRa_status = false;
+
+}
+
+void enableRadio()
+{
+    enableLoRa();
+    enableGPS();
+}
+void disableRadio()
+{
+    disableGPS();
+    disableLoRa();
+}
+
+void i2cScanner()
+{
+    byte error, address;
+    int nDevices;
+
+    Serial.println("Scanning...");
+
+    nDevices = 0;
+    for (address = 1; address < 127; address++)
+    {
+        // The i2c_scanner uses the return value of
+        // the Write.endTransmisstion to see if
+        // a device did acknowledge to the address.
+        Wire.beginTransmission(address);
+        error = Wire.endTransmission();
+
+        if (error == 0)
+        {
+            Serial.print("I2C device found at address 0x");
+            if (address < 16)
+                Serial.print("0");
+            Serial.print(address, HEX);
+            Serial.println("  !");
+
+            nDevices++;
+        }
+        else if (error == 4)
+        {
+            Serial.print("Unknow error at address 0x");
+            if (address < 16)
+                Serial.print("0");
+            Serial.println(address, HEX);
+        }
+    }
+    if (nDevices == 0)
+        Serial.println("No I2C devices found\n");
+    else
+        Serial.println("done\n");
+
+}
+
+void enableWiFi()
+{
+    adc_power_on();
+    WiFi.disconnect(false);  // Reconnect the network
+    WiFi.mode(WIFI_STA);    // Switch WiFi off
+ 
+    Serial.println("START WIFI");
+   //WiFi.begin(STA_SSID, STA_PASS);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+    delay(100);
+    // WiFi.begin("SSID", "password");
+    // while (WiFi.status() != WL_CONNECTED)
+    // {
+    //     delay(500);
+    //     Serial.print(".");
+    // }
+    // Serial.println("WiFi connected");
+    // Serial.println("IP address: ");
+    // Serial.println(WiFi.localIP());   
+}
+
+void lowpowermode()
+{
+    log_i("Disabling LoRa");
+    disableLoRa();
+    log_i("Disabling GPS");
+    disableGPS();
+    log_i("Disabling IMU");
+    disableIMU();
+    
+    
+    //log_i("Disabling adc");
+    //adc_power_off();
+    ////WiFi.disconnect(true);  // Disconnect from the network
+    //log_i("Disabling WiFi");
+    ////WiFi.mode(WIFI_MODE_NULL );    // Switch WiFi off
+    //WiFi.disconnect(true); 
+    //WiFi.mode(WIFI_OFF); 
+    //esp_wifi_stop(); 
+    //btStop(); 
+
+    //esp_bt_controller_disable(); //esp_bluedroid_disable();
+
+    //esp_wifi_set_ps(WIFI_PS_NONE);
+    //WiFi.setSleep(false);
+}
+
+void normalmode()
+{
+    log_i("Enabling LoRa");
+    enableLoRa();
+    log_i("Enabling GPS");
+    enableGPS();
+    //log_i("Enabling IMU");
+    // enableIMU();
+    //adc_power_on();
+    //WiFi.disconnect(false);  // Reconnect the network
+    //WiFi.mode(WIFI_STA);    // Switch WiFi off
+}
+
+void changeCPUFreq(int freq)
+{ 
+    //240, 160, 80, 40, 20, 10
+    Serial.print("Current CPU Freq: ");
+    Serial.println(getCpuFrequencyMhz());
+ 
+    setCpuFrequencyMhz(freq);
+    Serial.updateBaudRate(115200);
+
+    Serial.print("new CPU Freq: ");
+    Serial.println(getCpuFrequencyMhz());
+}
+
+void forceOneCore()
+{
+    //// Set the CPU core to run the loop code
+    //// on core 0
+    //xTaskCreatePinnedToCore(
+    //    loopTask,   /* Function to implement the task */
+    //    "loopTask", /* Name of the task */
+    //    10000,      /* Stack size in words */
+    //    NULL,       /* Task input parameter */
+    //    0,          /* Priority of the task */
+    //    NULL,       /* Task handle. */
+    //    0);         /* Core where the task should run */
+
+}
+
+bool gasGaugeON = false;
+void startGasGauge()
+{
+    stc3100_1.STC3100_Startup();
+    //stc3100_1.STC3100_resetGauge();
+    gasGaugeON = true;
+}
+void stopGasGauge()
+{
+    stc3100_1.STC3100_Powerdown();
+    gasGaugeON = false;
+}
+void setup()
+{
+    delay(100);
+    // setup the display
+    // u8x8.begin();
+    // u8x8.setFont(u8x8_font_chroma48medium8_r);
+    // u8x8.drawString(0, 0, "WGLabz LoRa Test");
+    //ESP32DualCoreClass::end();
+
+    Serial.begin(115200);
+    // Serial.println(F("Starting"));
+    // printf("\033[1;31m[E] RED\033[0m;");
+
+    /* bypass between Serial Serial2 */
+    
+    changeCPUFreq(80);
+
+    if (0)
+    {
+        Serial2.begin(9600, SERIAL_8N1, 16, 17);
+        // pinMode(EN_GPS, OUTPUT);
+        // gpson_time=millis();
+        // digitalWrite(EN_GPS, HIGH);
+        // Serial.begin(9600);
+        while (0)
+        {
+            if (Serial2.available() > 0)
+            {
+                String data = "";
+                // log_i("GPS Data: ");
+                // Serial.println("\n-- GPS Data -- ");
+                while (Serial2.available() > 0)
+                {
+                    // read the incoming byte:
+                    int inChar = Serial2.read();
+                    Serial.print((char)inChar);
+                }
+            }
+        }
+    }
+    log_i("Starting");
+
+    // START GAS GAUGE & I2C
+    Serial.println(F("Starting Wire"));
+    Wire.begin();
+
+    Serial.println(F("STC3100 startGasGauge"));
+    startGasGauge();
+    Serial.println(F("STC3100 Started"));
+    stc3100_1.STC3100_resetGauge();
+    // getting the battery data
+    readgasgauge();
+    log_i("stop gas gauge");
+    stopGasGauge();
+
+    // START IMU
+    //Enable IMU pins
+    pinMode(IMU_INT1, INPUT);
+    pinMode(IMU_INT2, INPUT);
+    pinMode(IMU_CS, OUTPUT);
+    digitalWrite(IMU_CS, HIGH);
+
+    #define DSO_SA0_LOW_ADDRESS  0b1101010
+
+    log_d("Testing IMU: %d", imu.testReg(DSO_SA0_LOW_ADDRESS, LSM6::WHO_AM_I));
+
+    //i2cScanner();
+
+#ifdef LORAMODULE_HELTEC
+    Serial.println(F("LORA MODULE= HELTEC"));
+    // In/Out Pins
+    pinMode(ledPin, OUTPUT);
+    pinMode(buttonPin, INPUT_PULLUP);
+    digitalWrite(buttonPin, HIGH);
+#else
+    Serial.println(F("LORA MODULE= CUSTOM"));
+    // SPI.begin(LoRa_SCK, 35, LoRa_MOSI, LoRa_nss); //MISO: 19, MOSI: 27, SCK: 5
+
+    // Configure pins
+    pinMode(EN_LORA, OUTPUT);
+    pinMode(EN_GPS, OUTPUT);
+
+
+    disableLoRa();
+    disableGPS();
+    //enableIMU();
+    delay(200);
+
+    //enableLoRa();
+    //enableGPS();
+
+    pinMode(BUZZER, OUTPUT);
+    //playBuzzer(1000, 1000);
+
+    // pinMode(LoRa_MISO, INPUT); // impedance test
+    delay(100);
+#endif
+
+    // LMIC init &RESET
+    // os_init_ex returns 0 if the LMIC was already initialized
+
+    // os_init();
+    // os_init_ex(&lmic_pins);
+    
+while(0)
+{
+    log_i("Going to hibernation");
+    esp32hibernation();
+}
 }
 
 void gpsloop()
@@ -843,17 +1109,146 @@ void sendloramessage()
     // drlw_1.enqueueMessage(messageStruct);
 }
 
+void imuReadRegs()
+{
+    // Read all the registers
+    for (int i = 0; i < 0x6C; i++)
+    {
+        Serial.print("0x");
+        Serial.print(i, HEX);
+        Serial.print(": 0x");
+        Serial.println(imu.readReg(i), HEX);
+    }
+
+}
+void disableIMU()
+{
+    imu.DisableIMU();
+    // set CS, INT1, INT2 to input mode
+    pinMode(IMU_CS, INPUT);
+    pinMode(IMU_INT1, INPUT);
+    pinMode(IMU_INT2, INPUT);
+    IMU_status=false;
+    
+}
+void enableIMU()
+{
+    if (!imu.init(LSM6::device_auto, LSM6::sa0_low))
+    {
+        Serial.println("Failed to detect and initialize IMU!");
+        while (1);
+    }
+    imu.enableDefault();
+    IMU_status=true;
+}
+char report[80];
+    int uS_TO_S_FACTOR = 1000000; //Conversion factor for micro seconds to seconds
+void setTimetoSleep(int timetosleep0)
+{
+  log_d("Setup ESP32 to sleep for every %d minutes", timetosleep0);
+  if (timetosleep0 > 0)
+  {
+
+    esp_sleep_enable_timer_wakeup((uint64_t)((uint64_t)timetosleep0 * (uint64_t)(uS_TO_S_FACTOR * 60)));
+
+    //timetosleep = timetosleep0;
+  }
+}
+void esp32hibernation()
+{
+  log_d(" ESP32HIBERNATION 1");
+
+  log_d(" ESP32HIBERNATION 2");
+
+  esp_sleep_pd_config(ESP_PD_DOMAIN_MAX, ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
+  //uint64_t sleeptime=10 * 60* uS_TO_S_FACTOR;
+  //log_d(" Going to HIBERNATE. Setting time to %d", sleeptime);
+  //esp_sleep_enable_timer_wakeup(timetosleep);
+  setTimetoSleep(20);
+  esp_deep_sleep_start();
+}
+
+
+void lightsleepesp(bool deepsleep)
+{
+  //enablesleepwithuart();
+  //log_i(" ica1.SetICAwakeModeBeforeSleep();");
+  if (deepsleep)
+  {
+    log_i(" esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);");
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+    //disableAllISR();
+  }
+
+  log_d(" LIGHTSLEEP");
+    int minutes=2;
+  log_w("# esp_light_sleep for %d minutes", minutes);
+  delay(500);
+  //drconnect_1.resetkccounter0();
+  esp_sleep_enable_timer_wakeup(minutes * 60 * uS_TO_S_FACTOR);
+  esp_light_sleep_start();
+}
+
+void getGPSmeasure()
+{
+    log_d("Getting GPS measure");
+    //get current from gas gauge
+    stc3100_1.ReadBatteryData();
+    int startculombs=stc3100_1.stc3100_getChargeCount();
+    unsigned long starttime=millis();
+
+    log_d("Enabling GPS");
+    //enable GPS
+    enableGPS();
+    //wait for 10 seconds
+    delay(1000);
+    //read GPS data
+    log_d("Waiting GPS data");
+    unsigned long waitingtime=millis();
+    while(gpsfirstboot)
+    {
+        gpsloop();
+
+        //print time each 10s
+        if(millis()-waitingtime>10000)
+        {
+            waitingtime=millis();
+            log_d("Waiting GPS data: %ds", (waitingtime-starttime)/1000);
+            //log gpsfirstboot, gps->hdop.hdop(), gps->hdop.hdop(), gps->satellites.value()
+            log_d("GPS: gpsfirstboot:%d, hdop:%2.2f, satellites:%d", gpsfirstboot, gps->hdop.hdop(), gps->satellites.value());
+        }
+    }
+    //disable GPS
+    disableGPS();
+    stc3100_1.ReadBatteryData();
+    int endculombs=stc3100_1.stc3100_getChargeCount();
+    unsigned long endtime=millis();
+    log_i("GPS data: on time: %ds, culombs: %d, gpsfb:%d, hdop:%2.2f, satellites:%d, lat: %f, long: %f", (waitingtime-starttime)/1000,endculombs-startculombs, gpsfirstboot, gps->hdop.hdop(), gps->satellites.value(), gps->location.lat(), gps->location.lng());
+
+
+
+}
+
+bool bussy=false;
+unsigned long downfreqtime=millis();
 void loop()
 {
-    // Run LORA loop
-    os_runloop_once();
-
-    // send LORA data every 10 seconds
-    if (millis() - currenttime > 10000)
+    if(LoRa_status)
     {
-        sendloramessage();
+        // Run LORA loop
+        os_runloop_once();
+
+        // send LORA data every 10 seconds
+        if (millis() - currenttime > 10000)
+        {
+            sendloramessage();
+        }
+        loraloop();
+        bussy=true;
     }
-    loraloop();
 
     // read gas gauge each 10 seconds
     if (millis() - currenttime_3 > 10000)
@@ -861,16 +1256,56 @@ void loop()
         currenttime_3 = millis();
         //    readgasgauge();
     }
-    gpsloop();
+    
+    //if(GPS_status)
+    //    gpsloop();
 
     // Print each 10s: lat, long, nsat, hdop, vbat, mabat, chargecount, temp, millis()-gpson_time, pending ack
     if (millis() - currenttime_5 > 10000)
     {
+        log_d("Reading battery data");
         currenttime_5 = millis();
-        stc3100_1.ReadBatteryData();
-        log_d("\n\tPending ACK: %d, Pending lora messages: %d, Vbat: %d, mAbat: %d, ChargeCount: %d, Temp: %d, \n\tTime since GPS on: %d, lat: %f, long: %f, nsat: %d, hdop: %2.2f",
-              drlw_1.pendingack_drlora, drlw_1.messageQueueLength(), stc3100_1.stc3100_getVbat(), stc3100_1.stc3100_getmAbat(), stc3100_1.stc3100_getChargeCount(),
-              stc3100_1.stc3100_getTEMP(), (millis() - gpson_time) / 1000, gps->location.lat(), gps->location.lng(), gps->satellites.value(), gps->hdop.hdop());
+        if(gasGaugeON)
+            stc3100_1.ReadBatteryData();
+        if(IMU_status)
+        {
+            imu.read();
+            snprintf(report, sizeof(report), "A: %6d %6d %6d    G: %6d %6d %6d",
+            imu.a.x, imu.a.y, imu.a.z,
+            imu.g.x, imu.g.y, imu.g.z);
+        }
+        else
+        {
+            snprintf(report, sizeof(report), "IMU not enabled");
+        }
+        char report2[80];
+        if(GPS_status)
+        {
+            gpsloop();
+            
+            snprintf(report2, sizeof(report2), "time gps on: %ds, lat: %f, long: %f, nsat: %d, hdop: %2.2f",
+            (millis() - gpson_time) / 1000,gps->location.lat(), gps->location.lng(), gps->satellites.value(), gps->hdop.hdop());
+        }
+        else
+        {
+            snprintf(report2, sizeof(report), "GPS not enabled");
+        }
+        char report4[80];
+        if(gasGaugeON)
+        {
+            snprintf(report4, sizeof(report4), "Vbat: %d, mAbat: %d, ChargeCount: %d, Temp: %d",
+            stc3100_1.stc3100_getVbat(), stc3100_1.stc3100_getmAbat(), stc3100_1.stc3100_getChargeCount(), stc3100_1.stc3100_getTEMP());
+        }
+        else
+        {
+            snprintf(report4, sizeof(report4), "Gas Gauge not enabled");
+        }
+        log_d("ACK...");
+        
+        log_d("\n\tPending ACK: %d, Pending lora messages: %d, \n\t%s, \n\tGPS: %s\n\tIMU: %s\n",
+              drlw_1.pendingack_drlora, drlw_1.messageQueueLength(), report4 ,report2 , report);
+            
+        bussy=true;
     }
 
     // read GPS
@@ -880,18 +1315,19 @@ void loop()
     if (Serial.available() > 0)
     {
         char keyPressed = Serial.read();
+
         switch (keyPressed)
         {
+        case '0':
+            log_d("Beeping one time");
+            playBuzzer(1000, 1000);
+            break;
         case '1':
             // Serial.println("Sending Lora Message");
             log_i("Sending Lora Message");
             sendloramessage();
             break;
-        case '2':
-            // Serial.println("Reading Gas Gauge");
-            log_i("Reading Gas Gauge");
-            readgasgauge();
-            break;
+
         case '3':
             // Serial.println("Reading GPS");
             log_i("Reading GPS");
@@ -908,15 +1344,142 @@ void loop()
             disableGPS();
             break;
         case '6':
+            // enable LoRa
+            log_i("Enabling LoRa");
+            enableLoRa();
+            break;
+        case '7':
+            // disable LoRa
+            log_i("Disabling LoRa");
+            disableLoRa();
+            break;
+        case '8':
             // print GPS data
             log_i("Printing GPS Data");
             printGPSData();
             break;
 
+        case '9':
+            //shutdown ESP32 during 60s
+            log_i("Shutting down ESP32");
+            esp_deep_sleep(60000000);
+            break;
+
+        case 'a':
+        log_i("Setting CPU to 10MHz");
+            changeCPUFreq(10);
+            break;
+
+        case 'b':
+        log_i("Setting CPU to 40MHz");
+            changeCPUFreq(40);
+            break;
+        
+        case 'c':
+        log_i("Setting CPU to 80MHz");
+            changeCPUFreq(80);
+            break;
+        case 'd': 
+            log_i("Setting CPU to 160MHz");
+            changeCPUFreq(160);
+        
+        case 'e':
+            log_i("Enabling low power mode");
+            lowpowermode();
+            break;
+        case 'f':
+            log_i("Disable IMU");
+            disableIMU();            
+            break;
+        case 'g':
+            log_i("Enable IMU");
+            enableIMU();
+            break;
+        case 'h':
+            log_i("Setting CPU to only one core");
+            forceOneCore();
+            break;
+        case 'i':
+            //log_i("Enabling low power mode");
+            //lowpowermode();
+            log_i("Entering into hibernation mode");
+            esp32hibernation();
+            break;
+        case 'j':
+            log_i("Read IMU Registers");
+            imuReadRegs();
+            break;
+        case 'k':
+            log_i("getting gps measure");
+            getGPSmeasure();
+        case 'l':
+            Serial.print("Current CPU Freq: ");
+            Serial.println(getCpuFrequencyMhz());
+            break;
+        case 'm':
+            log_i("downfreq to 10MHz during 30sec");
+            changeCPUFreq(10);
+            downfreqtime=millis();
+            break;
+        case 'n':
+            log_i("stop gas gauge");
+            stopGasGauge();
+            break;
+        case 'o':
+            log_i("start gas gauge");
+            startGasGauge();
+            break;
+        case 'p':
+            log_i("stc3100_1.ReadBatteryData");
+            stc3100_1.ReadBatteryData();
+            break;
+        case 'q':
+            log_i("read gas gauge registers");
+            stc3100_1.ReadRegisters();
+            break;
+        case '2':
+            // Serial.println("Reading Gas Gauge");
+            log_i("Reading Gas Gauge");
+            readgasgauge();
+            break;
+        case 'r':
+            log_i("start gauge ");
+            Serial.println(F("STC3100 startGasGauge"));
+            startGasGauge();
+            Serial.println(F("STC3100 Started"));
+            stc3100_1.STC3100_resetGauge();
+            break;
+        case 's':
+            log_i("Enable Radio");
+            enableRadio();
+            break;
+        case 't':
+            log_d("Disabling Radio");
+            disableRadio();
+            break;
         default:
-            Serial.println("Tecla no válida");
-            log_i("Tecla no válida");
+            //Serial.println("Tecla no válida");
+            log_w("Tecla no válida");
             break;
         }
+        
+        
+        //0x10: 00010000
+        //0x0c: 00001100
+        bussy=true;
     }
+
+    //if(!bussy)
+    //{
+        delay(500);
+    //}
+
+    //if(getCpuFrequencyMhz()==10 && millis()-downfreqtime>30000)
+    //{
+    //    changeCPUFreq(80);
+    //    log_w("Going back to 80MHz");
+    //}
 }
+
+
+// Consumo de unos 200uA (0,2mA) en hibernation. Deberia ser unos 3uA
