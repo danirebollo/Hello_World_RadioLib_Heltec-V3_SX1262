@@ -295,8 +295,8 @@ class LSM6
     void writeReg(uint8_t reg, uint8_t value);
     uint8_t readReg(uint8_t reg);
 
-    void readAcc();
-    void readGyro();
+    bool readAcc();
+    bool readGyro();
     void read();
 
     // vector functions

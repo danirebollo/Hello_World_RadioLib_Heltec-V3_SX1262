@@ -183,14 +183,22 @@ uint8_t LSM6::readReg(uint8_t reg)
 }
 
 // Reads the 3 accelerometer channels and stores them in vector a
-void LSM6::readAcc()
+bool LSM6::readAcc()
 {
   bus->beginTransmission(address);
   // automatic increment of register address is enabled by default (IF_INC in CTRL3_C)
   bus->write(OUTX_L_XL);
   bus->endTransmission();
 
-  bus->requestFrom(address, (uint8_t)6);
+
+  uint8_t request=bus->requestFrom(address, (uint8_t)6);
+  
+  if(request==0)
+  {
+    log_w("I2C request == 0: %d", request);
+    //checkIMUAvailable(bool force);
+    return false;
+  }
   uint8_t xla = bus->read();
   uint8_t xha = bus->read();
   uint8_t yla = bus->read();
@@ -204,17 +212,24 @@ void LSM6::readAcc()
   a.z = (int16_t)(zha << 8 | zla);
 
   //log_d("readAcc: a.x: %d, a.y: %d, a.z: %d", a.x, a.y, a.z);
+  return true;
 }
 
 // Reads the 3 gyro channels and stores them in vector g
-void LSM6::readGyro()
+bool LSM6::readGyro()
 {
   bus->beginTransmission(address);
   // automatic increment of register address is enabled by default (IF_INC in CTRL3_C)
   bus->write(OUTX_L_G);
   bus->endTransmission();
 
-  bus->requestFrom(address, (uint8_t)6);
+  uint8_t request=bus->requestFrom(address, (uint8_t)6);
+  if(request==0)
+  {
+    log_w("I2C request == 0: %d", request);
+    //checkIMUAvailable(bool force);
+    return false;
+  }
   uint8_t xlg = bus->read();
   uint8_t xhg = bus->read();
   uint8_t ylg = bus->read();
@@ -228,6 +243,7 @@ void LSM6::readGyro()
   g.z = (int16_t)(zhg << 8 | zlg);
 
   //log_d("readGyro: g.x: %d, g.y: %d, g.z: %d", g.x, g.y, g.z);
+  return true;
 }
 
 // Reads all 6 channels of the LSM6 and stores them in the object variables
