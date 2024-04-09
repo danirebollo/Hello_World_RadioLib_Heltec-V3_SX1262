@@ -131,6 +131,7 @@ extern "C"
         bool ggtimedmeasure(bool force=0);
         int stc3100_getVbat_buffer();
         int stc3100_getTEMP(bool force=0);
+        void ReadRegisters();
     };
 #ifdef __cplusplus
 } // extern "C"

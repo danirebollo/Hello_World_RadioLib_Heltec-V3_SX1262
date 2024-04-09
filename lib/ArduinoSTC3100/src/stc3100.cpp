@@ -181,6 +181,13 @@ int STC3100::STC3100_WriteWord(u8 u8_Register, s16 s16_value)
 * Input          : None
 * Return         : error status (STC3100_OK, !STC3100_OK)
 *******************************************************************************/
+void STC3100::ReadRegisters()
+{
+	int rv2 = STC3100_ReadByte(STC3100_REG_MODE);
+	log_d("STC3100_ReadByte(STC3100_REG_MODE): 0x%x", rv2);
+	int rv1 = STC3100_ReadByte(STC3100_REG_CTRL);
+	log_d("STC3100_ReadByte(STC3100_REG_CTRL): 0x%x", rv1);
+}
 int STC3100::STC3100_Startup()
 {
 	//log_d("STC3100_Startup");
@@ -191,9 +198,10 @@ int STC3100::STC3100_Startup()
 	//	return -1;
 
 	// read the REG_CTRL to reset the GG_EOC and VTM_EOC bits
-	int rv1 = STC3100_ReadByte(STC3100_REG_CTRL);
 	int rv2 = STC3100_ReadByte(STC3100_REG_MODE);
-	//log_d("STC3100_ReadByte(STC3100_REG_CTRL): 0x%x", rv1);
+	log_d("STC3100_ReadByte(STC3100_REG_MODE): 0x%x", rv2);
+	int rv1 = STC3100_ReadByte(STC3100_REG_CTRL);
+	log_d("STC3100_ReadByte(STC3100_REG_CTRL): 0x%x", rv1);
 	if (rv2 == 16)
 	{
 		//log_d("STC3100_ReadByte(STC3100_REG_MODE): 0x%x", rv2);
@@ -260,7 +268,8 @@ int STC3100::STC3100_Powerdown(void)
 	int s32_res;
 
 	// write 0 into the REG_MODE register to put the STC3100 in standby mode
-	s32_res = STC3100_WriteByte(STC3100_REG_MODE, 0);
+	//s32_res = STC3100_WriteByte(STC3100_REG_MODE, 0);
+	s32_res = STC3100_WriteByte(STC3100_REG_MODE, 0x0);
 	if (s32_res != STC3100_OK)
 		return (s32_res);
 
