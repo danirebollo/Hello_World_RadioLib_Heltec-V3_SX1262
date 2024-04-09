@@ -183,6 +183,9 @@ void hal_processPendingIRQs() {
 
 // -----------------------------------------------------------------------------
 // SPI
+static void hal_spi_stop() {
+   hal_spi_stop_ex();
+}
 
 static void hal_spi_init () {
     #ifdef LORAMODULE_HELTEC
@@ -465,6 +468,28 @@ void hal_init_ex (const void *pContext) {
     }
 }
 
+void hal_spi_stop_ex() {
+    // check for null pointer to avoid crash if called before hal_init_ex
+    //check if hpsi is class of SPI
+
+    //if(dynamic_cast<SPI*>(hspi))
+    //{
+    //}
+
+    if (hspi == nullptr || hspi == NULL || hspi == 0)
+    {
+        Serial.print("Warning. hspi is null");
+        
+    }
+    else
+    {
+        //Serial.print("hspi is not null. Trying to end it.");
+        hspi->end();
+    }
+
+       
+}
+
 // C++ API: initialize the HAL properly with a configuration object
 namespace Arduino_LMIC {
 bool hal_init_with_pinmap(const HalPinmap_t *pPinmap)
@@ -487,6 +512,9 @@ bool hal_init_with_pinmap(const HalPinmap_t *pPinmap)
 
     // configure radio I/O and interrupt handler
     hal_io_init();
+
+    hal_spi_stop();
+
     // configure radio SPI
     hal_spi_init();
     // configure timer and interrupt handler

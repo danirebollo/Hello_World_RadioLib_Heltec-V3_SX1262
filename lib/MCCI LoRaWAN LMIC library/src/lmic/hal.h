@@ -51,6 +51,8 @@ typedef void LMIC_ABI_STD hal_failure_handler_t(const char* const file, const ui
  */
 void hal_init (void);
 
+
+void hal_spi_stop_ex();
 /*
  * Initialize hardware, passing in platform-specific context
  * The pointer is to a HalPinmap_t.

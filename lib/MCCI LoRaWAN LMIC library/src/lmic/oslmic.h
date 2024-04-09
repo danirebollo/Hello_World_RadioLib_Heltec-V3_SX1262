@@ -111,6 +111,7 @@ int radio_init (void);
 void radio_irq_handler (u1_t dio);
 void radio_irq_handler_v2 (u1_t dio, ostime_t tref);
 int os_init (void);
+int spi_stop();
 int os_init_ex (const void *pPinMap);
 void os_runloop (void);
 void os_runloop_once (void);

@@ -51,6 +51,9 @@ int os_init_ex (const void *pintable) {
     return 1;
 }
 
+int spi_stop() {
+    hal_spi_stop_ex();
+}
 int os_init() {
     LMIC_DEBUG_PRINTF("os_init_ex\n");
     if (os_init_ex((const void *)&lmic_pins))
